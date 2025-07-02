@@ -15,194 +15,12 @@ from string import digits, ascii_letters
 import urllib.parse
 import base64
 import ctypes
-import hashlib
-import platform
-import webbrowser
-import datetime
-import requests
-
-# ===================================================================
-# Color Definitions
-# ===================================================================
-
-class NebulaColors:
-    def __init__(self):
-        self.W = '\x1b[97;1m'
-        self.R = '\x1b[91;1m'
-        self.G = '\x1b[92;1m'
-        self.Y = '\x1b[93;1m'
-        self.B = '\x1b[94;1m'
-        self.P = '\x1b[95;1m'
-        self.C = '\x1b[96;1m'
-        self.N = '\x1b[0m'
-
-# ===================================================================
-# SUBSCRIPTION SYSTEM - DO NOT MODIFY BELOW THIS LINE
-# ===================================================================
-
-class SubscriptionManager:
-    def __init__(self):
-        self.config_file = "subscription_config.json"
-        self.device_id = self.get_device_id()
-        self.subscription_key = self.generate_subscription_key()
-        
-    def get_device_id(self):
-        """Generate a unique device ID based only on MAC address for stability"""
-        try:
-            mac = uuid.getnode()
-            if (mac >> 40) % 2:
-                # If MAC is a random value (locally administered), fallback
-                return 'STATIC_DEVICE_ID_FALLBACK'
-            return hex(mac)[2:].upper()
-        except:
-            return 'STATIC_DEVICE_ID_FALLBACK'
-    
-    def generate_subscription_key(self):
-        """Generate a subscription key based on device ID"""
-        # Create a deterministic key based on device ID
-        key_base = hashlib.md5(self.device_id.encode()).hexdigest()[:12]
-        return f"SUB-{key_base.upper()}"
-    
-    def copy_to_clipboard(self, text):
-        """Copy text to clipboard"""
-        try:
-            if platform.system() == "Windows":
-                import pyperclip
-                pyperclip.copy(text)
-                return True
-            elif platform.system() == "Darwin":  # macOS
-                subprocess.run(['pbcopy'], input=text.encode(), check=True)
-                return True
-            else:  # Linux
-                subprocess.run(['xclip', '-selection', 'clipboard'], input=text.encode(), check=True)
-                return True
-        except:
-            return False
-    
-    def load_config(self):
-        """Load subscription configuration from file"""
-        try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r') as f:
-                    return json.load(f)
-        except:
-            pass
-        return {}
-    
-    def save_config(self, config):
-        """Save subscription configuration to file"""
-        try:
-            with open(self.config_file, 'w') as f:
-                json.dump(config, f, indent=2)
-        except:
-            pass
-    
-    def check_online_subscription(self, key):
-        try:
-            url = f"https://clone-api-0gxk.onrender.com/api/check_key?key={key}"
-            resp = requests.get(url, timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("approved", False)
-            return False
-        except Exception as e:
-            print(f"\x1b[1;91m[!] Subscription server error: {e}\x1b[0m")
-            return False
-
-    def check_subscription(self):
-        # First try online API check
-        online = self.check_online_subscription(self.subscription_key)
-        if online:
-            return True
-        # Fallback to local config (optional)
-        config = self.load_config()
-        if self.device_id in config:
-            device_config = config[self.device_id]
-            if device_config.get('subscription_key') == self.subscription_key:
-                return device_config.get('approved', False)
-        return False
-    
-    def create_subscription(self):
-        """Create new subscription entry for device"""
-        config = self.load_config()
-        
-        config[self.device_id] = {
-            'subscription_key': self.subscription_key,
-            'approved': False,
-            'created_at': str(datetime.datetime.now())
-        }
-        
-        self.save_config(config)
-    
-    def display_subscription_info(self):
-        """Display subscription information and instructions (screenshot style, mobile-friendly)"""
-        print(SubscriptionManager.pro_banner())
-        print('\x1b[1;92m[~] WELCOME to ALPHA-X ZONE 🚀✨\x1b[0m')
-        print('\x1b[1;96m[~] CREATOR: MR Likhon⚠️\x1b[0m')
-        print()
-        print("\x1b[1;92m[~] YOU KEY IS NOT \x1b[1;91mACTIVATE\x1b[0m")
-        print()
-        print(f"\x1b[1;92m[~] YOUR KEY : \x1b[1;97m{self.subscription_key}\x1b[0m")
-        print("\x1b[1;93m    👉 Copy this key for approval\x1b[0m")
-        print()
-        print("\x1b[1;92m[~] SENT THIS KEY FOR BUY TOOL\x1b[0m")
-        print()
-        input("\x1b[1;92m[~] PRESS ENTER TO SENT KEY\x1b[0m")
-        print()
-        telegram_url = "http://t.me/clone_tool_subscription_bot"
-        print(f"\x1b[1;96m[~] TELEGRAM BOT: {telegram_url}\x1b[0m")
-        os.system(f'xdg-open {telegram_url}')
-        print("\x1b[1;92m[~] WAITING FOR ADMIN APPROVAL...\x1b[0m")
-        print("\x1b[1;96m[~] CREATOR: MR Likhon⚠️\x1b[0m")
-        input("\x1b[1;92m[~] PRESS ENTER TO EXIT\x1b[0m")
-        sys.exit()
-
-    @staticmethod
-    def pro_banner():
-        color = NebulaColors()
-        return ('''
-\x1b[1;96m
- █████╗ ██╗     ██████╗ ██╗  ██╗ █████╗ 
-██╔══██╗██║     ██╔══██╗██║  ██║██╔══██╗
-███████║██║     ██████╔╝███████║███████║
-██╔══██║██║     ██╔═══╝ ██╔══██║██╔══██║
-██║  ██║███████╗██║     ██║  ██║██║  ██║
-╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝
-\x1b[1;95m╔═══════════════════════════════════════════════════════╗
-\x1b[1;95m║\x1b[1;97m                ✦  𝗧𝗢𝗢𝗟 I𝗡𝗙𝗢 𝗣𝗔𝗡𝗘𝗟  ✦                  \x1b[1;95m║
-\x1b[1;95m╚═══════════════════════════════════════════════════════╝
-\x1b[1;96m   ➤ \x1b[1;97mCreator        : \x1b[1;96mMR Likhon⚠️
-\x1b[1;96m   ➤ \x1b[1;97mOperated By    : \x1b[1;92mALPHA \x1b[1;91m(\x1b[1;90mPremium Access\x1b[1;91m)
-\x1b[1;96m   ➤ \x1b[1;97mTool Access    : \x1b[1;93mPAID
-\x1b[1;96m   ➤ \x1b[1;97mCurrent Version: \x1b[1;95m0.2
-\x1b[1;92m─────────────────────────────────────────────────────────''')
-
-def check_subscription_before_start():
-    """Check subscription before starting the main tool"""
-    subscription = SubscriptionManager()
-    
-    # Check if this is first run
-    config = subscription.load_config()
-    if subscription.device_id not in config:
-        subscription.create_subscription()
-    
-    # Check subscription status
-    if not subscription.check_subscription():
-        subscription.display_subscription_info()
-    
-    # If approved, continue
-    print("✅ Subscription verified! Starting tool...")
-    print("-" * 40)
-
-# Check subscription before starting
-check_subscription_before_start()
 
 # ===================================================================
 # Initial Setup & Welcome
 # ===================================================================
 
-print('\x1b[1;92m[~] WELCOME to ALPHA-X ZONE 🚀✨\x1b[0m')
-print('\x1b[1;96m[~] CREATOR: MR Likhon⚠️\x1b[0m')
+print('\x1b[1;91m[\x1b[1;97m-\x1b[1;91m] \x1b[1;92m WELCOME to \x1b[1;96mALPHA-X ZONE 🚀✨\x1b[1;92m!')
 os.system('xdg-open https://t.me/AlphaX_Zone')
 time.sleep(2)
 
@@ -387,6 +205,36 @@ ua = '[Mozilla/5.0 (Linux; Android 9; SM-T590) AppleWebKit/537.36 (KHTML, like G
 # ===================================================================
 os.system('chmod 700 /data/data/com.termux/files/usr/bin >/dev/null 2>&1')
 os.system('pkill -f httcanary >/dev/null 2>&1')
+
+class NebulaColors:
+    def __init__(self):
+        self.W = '\x1b[97;1m'
+        self.R = '\x1b[91;1m'
+        self.G = '\x1b[92;1m'
+        self.Y = '\x1b[93;1m'
+        self.B = '\x1b[94;1m'
+        self.P = '\x1b[95;1m'
+        self.C = '\x1b[96;1m'
+        self.N = '\x1b[0m'
+
+def pro_banner():
+    color = NebulaColors()
+    return ('''
+\x1b[1;96m
+ █████╗ ██╗     ██████╗ ██╗  ██╗ █████╗ 
+██╔══██╗██║     ██╔══██╗██║  ██║██╔══██╗
+███████║██║     ██████╔╝███████║███████║
+██╔══██║██║     ██╔═══╝ ██╔══██║██╔══██║
+██║  ██║███████╗██║     ██║  ██║██║  ██║
+╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝
+\x1b[1;95m╔═══════════════════════════════════════════════════════╗
+\x1b[1;95m║\x1b[1;97m                ✦  𝗧𝗢𝗢𝗟 I𝗡𝗙𝗢 𝗣𝗔𝗡𝗘𝗟  ✦                  \x1b[1;95m║
+\x1b[1;95m╚═══════════════════════════════════════════════════════╝
+\x1b[1;96m   ➤ \x1b[1;97mCreator        : \x1b[1;96mMR Likhon⚠️
+\x1b[1;96m   ➤ \x1b[1;97mOperated By    : \x1b[1;92mALIF
+\x1b[1;96m   ➤ \x1b[1;97mTool Access    : \x1b[1;93mPAID
+\x1b[1;96m   ➤ \x1b[1;97mCurrent Version: \x1b[1;95m1.2
+\x1b[1;92m─────────────────────────────────────────────────────────''')
 
 def linex():
     color = NebulaColors()
@@ -620,7 +468,7 @@ class ASIMCracker:
 
 def clear():
     os.system('clear')
-    print(SubscriptionManager.pro_banner())
+    print(pro_banner())
 
 if __name__ == '__main__':
     try:
