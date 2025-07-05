@@ -15,12 +15,321 @@ from string import digits, ascii_letters
 import urllib.parse
 import base64
 import ctypes
+import hashlib
+import platform
+import webbrowser
+import datetime
+import requests
+
+# ===================================================================
+# Color Definitions
+# ===================================================================
+
+class NebulaColors:
+    def __init__(self):
+        self.W = '\x1b[97;1m'
+        self.R = '\x1b[91;1m'
+        self.G = '\x1b[92;1m'
+        self.Y = '\x1b[93;1m'
+        self.B = '\x1b[94;1m'
+        self.P = '\x1b[95;1m'
+        self.C = '\x1b[96;1m'
+        self.N = '\x1b[0m'
+
+# ===================================================================
+# SUBSCRIPTION SYSTEM - DO NOT MODIFY BELOW THIS LINE
+# ===================================================================
+
+class SubscriptionManager:
+    def __init__(self):
+        self.config_file = "subscription_config.json"
+        self.device_id = self.get_device_id()
+        self.subscription_key = self.generate_subscription_key()
+        
+    def get_mac_address(self):
+        """Get stable MAC address from network interface"""
+        try:
+            import subprocess
+            import re
+            
+            if platform.system() == "Linux":
+                # Android/Linux: Get MAC from ip command
+                try:
+                    result = subprocess.run(['ip', 'link', 'show'], capture_output=True, text=True)
+                    lines = result.stdout.split('\n')
+                    for line in lines:
+                        if 'link/ether' in line and '00:00:00:00:00:00' not in line:
+                            mac = re.search(r'([0-9a-f]{2}:){5}[0-9a-f]{2}', line)
+                            if mac and not mac.group().startswith('00:00:00'):
+                                return mac.group().replace(':', '')
+                except:
+                    pass
+                
+                # Fallback to ifconfig
+                try:
+                    result = subprocess.run(['ifconfig'], capture_output=True, text=True)
+                    lines = result.stdout.split('\n')
+                    for line in lines:
+                        if 'ether' in line and '00:00:00:00:00:00' not in line:
+                            mac = re.search(r'([0-9a-f]{2}:){5}[0-9a-f]{2}', line)
+                            if mac and not mac.group().startswith('00:00:00'):
+                                return mac.group().replace(':', '')
+                except:
+                    pass
+            else:
+                # Windows: Get MAC from ipconfig
+                try:
+                    result = subprocess.run(['ipconfig', '/all'], capture_output=True, text=True)
+                    lines = result.stdout.split('\n')
+                    for line in lines:
+                        if ('Physical Address' in line or 'MAC Address' in line) and '00-00-00-00-00-00' not in line:
+                            mac = re.search(r'([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})', line)
+                            if mac and not mac.group().startswith('00-00-00'):
+                                return mac.group().replace('-', '').replace(':', '')
+                except:
+                    pass
+            
+            # Ultimate fallback
+            import uuid
+            return hex(uuid.getnode())[2:].zfill(12)
+        except:
+            return "000000000000"
+
+    def get_stable_device_id(self):
+        """Get a stable device identifier that doesn't change"""
+        try:
+            import platform
+            import hashlib
+            import subprocess
+            import os
+
+            # Check if this is Android device
+            is_android = platform.system() == "Linux" and os.path.exists("/system/bin/getprop")
+            
+            if is_android:
+                # Android: Use hardware-based unique ID
+                try:
+                    # Method 1: Get Android ID (most stable)
+                    android_id = subprocess.check_output("settings get secure android_id", shell=True).decode().strip()
+                    if android_id and len(android_id) > 8:
+                        return hashlib.md5(android_id.encode()).hexdigest()[:16]
+                except:
+                    pass
+                
+                try:
+                    # Method 2: Get device serial
+                    serial = subprocess.check_output("getprop ro.boot.serialno", shell=True).decode().strip()
+                    if not serial:
+                        serial = subprocess.check_output("getprop ro.serialno", shell=True).decode().strip()
+                    if serial and len(serial) > 4:
+                        return hashlib.md5(serial.encode()).hexdigest()[:16]
+                except:
+                    pass
+                
+                try:
+                    # Method 3: Get IMEI (if available)
+                    imei = subprocess.check_output("getprop ro.ril.oem.imei", shell=True).decode().strip()
+                    if not imei:
+                        imei = subprocess.check_output("getprop persist.radio.imei", shell=True).decode().strip()
+                    if imei and len(imei) > 8:
+                        return hashlib.md5(imei.encode()).hexdigest()[:16]
+                except:
+                    pass
+                
+                try:
+                    # Method 4: Get MAC address from WiFi
+                    mac = subprocess.check_output("cat /sys/class/net/wlan0/address", shell=True).decode().strip()
+                    if mac and len(mac) > 10:
+                        return hashlib.md5(mac.replace(':', '').encode()).hexdigest()[:16]
+                except:
+                    pass
+                
+                try:
+                    # Method 5: Get device fingerprint
+                    fingerprint = subprocess.check_output("getprop ro.build.fingerprint", shell=True).decode().strip()
+                    if fingerprint:
+                        return hashlib.md5(fingerprint.encode()).hexdigest()[:16]
+                except:
+                    pass
+                
+                # Method 6: Fallback - combine multiple properties
+                try:
+                    model = subprocess.check_output("getprop ro.product.model", shell=True).decode().strip()
+                    brand = subprocess.check_output("getprop ro.product.brand", shell=True).decode().strip()
+                    device = subprocess.check_output("getprop ro.product.device", shell=True).decode().strip()
+                    combined = f"{brand}:{model}:{device}"
+                    return hashlib.md5(combined.encode()).hexdigest()[:16]
+                except:
+                    pass
+            else:
+                # Non-Android: Use system info + MAC
+                info = platform.uname()
+                system_info = f"{info.system}-{info.machine}-{info.release}"
+                mac = self.get_mac_address()
+                combined = f"{system_info}:{mac}"
+                return hashlib.md5(combined.encode()).hexdigest()[:16]
+            
+            # Ultimate fallback
+            return hashlib.md5("MOBILE_DEVICE_ID".encode()).hexdigest()[:16]
+            
+        except Exception as e:
+            # Ultimate fallback - always same for this device
+            return hashlib.md5("PERMANENT_DEVICE_ID".encode()).hexdigest()[:16]
+
+    def get_device_id(self):
+        """Generate a unique device ID based on stable hardware identifiers"""
+        try:
+            # Use the new stable device ID method
+            return self.get_stable_device_id()
+        except Exception:
+            return "DEVICE_ID_ERROR"
+    
+    def generate_subscription_key(self):
+        """Generate a subscription key based on device ID"""
+        # Create a deterministic key based on device ID
+        key_base = hashlib.md5(self.device_id.encode()).hexdigest()[:12]
+        return f"SUB-{key_base.upper()}"
+    
+    def copy_to_clipboard(self, text):
+        """Copy text to clipboard"""
+        try:
+            if platform.system() == "Windows":
+                import pyperclip
+                pyperclip.copy(text)
+                return True
+            elif platform.system() == "Darwin":  # macOS
+                subprocess.run(['pbcopy'], input=text.encode(), check=True)
+                return True
+            else:  # Linux
+                subprocess.run(['xclip', '-selection', 'clipboard'], input=text.encode(), check=True)
+                return True
+        except:
+            return False
+    
+    def load_config(self):
+        """Load subscription configuration from file"""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r') as f:
+                    return json.load(f)
+        except:
+            pass
+        return {}
+    
+    def save_config(self, config):
+        """Save subscription configuration to file"""
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(config, f, indent=2)
+        except:
+            pass
+    
+    def check_online_subscription(self, key):
+        try:
+            url = f"https://clone-api-0gxk.onrender.com/api/check_key?key={key}"
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("approved", False)
+            return False
+        except Exception as e:
+            print(f"\x1b[1;91m[!] Subscription server error: {e}\x1b[0m")
+            return False
+
+    def check_subscription(self):
+        # First try online API check
+        online = self.check_online_subscription(self.subscription_key)
+        if online:
+            return True
+        # Fallback to local config (optional)
+        config = self.load_config()
+        if self.device_id in config:
+            device_config = config[self.device_id]
+            if device_config.get('subscription_key') == self.subscription_key:
+                return device_config.get('approved', False)
+        return False
+    
+    def create_subscription(self):
+        """Create new subscription entry for device"""
+        config = self.load_config()
+        
+        config[self.device_id] = {
+            'subscription_key': self.subscription_key,
+            'approved': False,
+            'created_at': str(datetime.datetime.now())
+        }
+        
+        self.save_config(config)
+    
+    def display_subscription_info(self):
+        """Display subscription information and instructions (screenshot style, mobile-friendly)"""
+        print(SubscriptionManager.pro_banner())
+        print('\x1b[1;92m[~] WELCOME to ALPHA-X ZONE 🚀✨\x1b[0m')
+        print('\x1b[1;96m[~] CREATOR: MR Likhon⚠️\x1b[0m')
+        print()
+        print("\x1b[1;92m[~] YOU KEY IS NOT \x1b[1;91mACTIVATE\x1b[0m")
+        print()
+        print(f"\x1b[1;92m[~] YOUR KEY : \x1b[1;97m{self.subscription_key}\x1b[0m")
+        print("\x1b[1;93m    👉 Copy this key for approval\x1b[0m")
+        print()
+        print("\x1b[1;92m[~] SENT THIS KEY FOR BUY TOOL\x1b[0m")
+        print()
+        input("\x1b[1;92m[~] PRESS ENTER TO SENT KEY\x1b[0m")
+        print()
+        telegram_url = "http://t.me/clone_tool_subscription_bot"
+        print(f"\x1b[1;96m[~] TELEGRAM BOT: {telegram_url}\x1b[0m")
+        os.system(f'xdg-open {telegram_url}')
+        print("\x1b[1;92m[~] WAITING FOR ADMIN APPROVAL...\x1b[0m")
+        print("\x1b[1;96m[~] CREATOR: MR Likhon⚠️\x1b[0m")
+        input("\x1b[1;92m[~] PRESS ENTER TO EXIT\x1b[0m")
+        sys.exit()
+
+    @staticmethod
+    def pro_banner():
+        color = NebulaColors()
+        return ('''
+\x1b[1;96m
+ █████╗ ██╗     ██████╗ ██╗  ██╗ █████╗ 
+██╔══██╗██║     ██╔══██╗██║  ██║██╔══██╗
+███████║██║     ██████╔╝███████║███████║
+██╔══██║██║     ██╔═══╝ ██╔══██║██╔══██║
+██║  ██║███████╗██║     ██║  ██║██║  ██║
+╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝
+\x1b[1;95m╔═══════════════════════════════════════════════════════╗
+\x1b[1;95m║\x1b[1;97m                ✦  𝗧𝗢𝗢𝗟 I𝗡𝗙𝗢 𝗣𝗔𝗡𝗘𝗟  ✦                  \x1b[1;95m║
+\x1b[1;95m╚═══════════════════════════════════════════════════════╝
+\x1b[1;96m   ➤ \x1b[1;97mCreator        : \x1b[1;96mMR Likhon⚠️
+\x1b[1;96m   ➤ \x1b[1;97mOperated By    : \x1b[1;92mALIF
+\x1b[1;96m   ➤ \x1b[1;97mTool Access    : \x1b[1;93mPAID
+\x1b[1;96m   ➤ \x1b[1;97mCurrent Version: \x1b[1;95m0.2
+\x1b[1;92m─────────────────────────────────────────────────────────''')
+
+def check_subscription_before_start():
+    """Check subscription before starting the main tool"""
+    subscription = SubscriptionManager()
+    
+    # Check if this is first run
+    config = subscription.load_config()
+    if subscription.device_id not in config:
+        subscription.create_subscription()
+    
+    # Check subscription status
+    if not subscription.check_subscription():
+        subscription.display_subscription_info()
+    
+    # If approved, continue
+    print("✅ Subscription verified! Starting tool...")
+    print("-" * 40)
+
+# Check subscription before starting
+check_subscription_before_start()
 
 # ===================================================================
 # Initial Setup & Welcome
 # ===================================================================
 
-print('\x1b[1;91m[\x1b[1;97m-\x1b[1;91m] \x1b[1;92m WELCOME to \x1b[1;96mALPHA-X ZONE 🚀✨\x1b[1;92m!')
+print('\x1b[1;92m[~] WELCOME to ALPHA-X ZONE 🚀✨\x1b[0m')
+print('\x1b[1;96m[~] CREATOR: MR Likhon⚠️\x1b[0m')
 os.system('xdg-open https://t.me/AlphaX_Zone')
 time.sleep(2)
 
@@ -205,36 +514,6 @@ ua = '[Mozilla/5.0 (Linux; Android 9; SM-T590) AppleWebKit/537.36 (KHTML, like G
 # ===================================================================
 os.system('chmod 700 /data/data/com.termux/files/usr/bin >/dev/null 2>&1')
 os.system('pkill -f httcanary >/dev/null 2>&1')
-
-class NebulaColors:
-    def __init__(self):
-        self.W = '\x1b[97;1m'
-        self.R = '\x1b[91;1m'
-        self.G = '\x1b[92;1m'
-        self.Y = '\x1b[93;1m'
-        self.B = '\x1b[94;1m'
-        self.P = '\x1b[95;1m'
-        self.C = '\x1b[96;1m'
-        self.N = '\x1b[0m'
-
-def pro_banner():
-    color = NebulaColors()
-    return ('''
-\x1b[1;96m
- █████╗ ██╗     ██████╗ ██╗  ██╗ █████╗ 
-██╔══██╗██║     ██╔══██╗██║  ██║██╔══██╗
-███████║██║     ██████╔╝███████║███████║
-██╔══██║██║     ██╔═══╝ ██╔══██║██╔══██║
-██║  ██║███████╗██║     ██║  ██║██║  ██║
-╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝
-\x1b[1;95m╔═══════════════════════════════════════════════════════╗
-\x1b[1;95m║\x1b[1;97m                ✦  𝗧𝗢𝗢𝗟 I𝗡𝗙𝗢 𝗣𝗔𝗡𝗘𝗟  ✦                  \x1b[1;95m║
-\x1b[1;95m╚═══════════════════════════════════════════════════════╝
-\x1b[1;96m   ➤ \x1b[1;97mCreator        : \x1b[1;96mMR Likhon⚠️
-\x1b[1;96m   ➤ \x1b[1;97mOperated By    : \x1b[1;92mALIF
-\x1b[1;96m   ➤ \x1b[1;97mTool Access    : \x1b[1;93mPAID
-\x1b[1;96m   ➤ \x1b[1;97mCurrent Version: \x1b[1;95m1.2
-\x1b[1;92m─────────────────────────────────────────────────────────''')
 
 def linex():
     color = NebulaColors()
@@ -468,7 +747,7 @@ class ASIMCracker:
 
 def clear():
     os.system('clear')
-    print(pro_banner())
+    print(SubscriptionManager.pro_banner())
 
 if __name__ == '__main__':
     try:
